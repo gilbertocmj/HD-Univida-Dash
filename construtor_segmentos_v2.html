@@ -613,7 +613,7 @@ function buildSegCardHTML(seg){
       <button class="seg-icon-btn" onclick="changeIcon(${seg.id})" title="Mudar emoji">${seg.icon}</button>
       <input class="seg-name-input" id="seg-name-${seg.id}" value="${seg.name}" placeholder="Nome do segmento" oninput="renameSeg(${seg.id},this.value)">
       <div class="seg-kpis">
-        <div class="seg-kpi"><span class="sk-val" id="sk-total-${seg.id}">${fmtN(total)}</span><span class="sk-lbl">total</span></div>
+        <div class="seg-kpi"><span class="sk-val" id="sk-total-${seg.id}">${fmtN(total)}</span><span class="sk-lbl">atend.</span></div><div class="sk-kpi"><span class="sk-val" style="color:var(--gold)" id="sk-fat-${seg.id}">${fmtR(fat)}</span><span class="sk-lbl">faturado</span></div>
         <div class="seg-kpi"><span class="sk-val" id="sk-types-${seg.id}">${seg.procs.size}</span><span class="sk-lbl">tipos</span></div>
       </div>
       <div class="seg-card-actions">
@@ -640,10 +640,11 @@ function renderSegTags(segId){
   el.innerHTML = [...seg.procs].map(p=>{
     const proc = PROC_MAP[p];
     const qtd = proc?.qtd_total||0;
+    const fat = proc?.fat_total||0;
     const short = p.length>35?p.slice(0,35)+'…':p;
     return `<div class="proc-tag">
       <span class="pt-name" title="${p}">${short}</span>
-      <span class="pt-qtd">${fmtN(qtd)}</span>
+      <span class="pt-qtd">${fmtN(qtd)} · <span style="color:#c9a84c">${fmtR(fat)}</span></span>
       <button class="pt-rm" onclick="removeProcFromSeg(${segId},'${p.replace(/'/g,"\\'")}')">✕</button>
     </div>`;
   }).join('');
@@ -661,8 +662,10 @@ function renderSegChart(segId){
   const MESES_2026 = MESES_HIST.filter(m=>m.startsWith('2026'));
 
   const monthly = {};
+  const monthlyFat = {};
   MESES_HIST.forEach(m => {
-    monthly[m] = [...seg.procs].reduce((s,p)=>s+(PROC_MAP[p]?.meses?.[m]?.qtd||0),0);
+    monthly[m]    = [...seg.procs].reduce((s,p)=>s+(PROC_MAP[p]?.meses?.[m]?.qtd||0),0);
+    monthlyFat[m] = [...seg.procs].reduce((s,p)=>s+(PROC_MAP[p]?.meses?.[m]?.fat||0),0);
   });
 
   // Simple linear trend for 2026 remaining months
@@ -693,7 +696,21 @@ function renderSegChart(segId){
       {label:'Meta 2026',data:metaData,borderColor:seg.color,fill:false,pointRadius:1,tension:0.3,borderWidth:1.5,borderDash:[4,3]},
     ]},
     options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{labels:{color:'#6b6560',font:{size:9},boxWidth:8,padding:8}}},
+      plugins:{
+        legend:{labels:{color:'#6b6560',font:{size:9},boxWidth:8,padding:8}},
+        tooltip:{callbacks:{label:function(ctx){
+          const label=ctx.dataset.label||'';
+          const val=ctx.parsed.y;
+          if(val===null||val===undefined) return null;
+          // Find the month for this data point to get fat value
+          const allMeses=[...MESES_HIST,...metaMeses.filter(m=>!MESES_HIST.includes(m))];
+          const mes=allMeses[ctx.dataIndex];
+          const fat=monthlyFat[mes]||0;
+          const fatStr=fat>=1000000?'R$'+(fat/1000000).toFixed(1)+'M':fat>=1000?'R$'+(fat/1000).toFixed(0)+'k':'R$'+Math.round(fat);
+          if(label.includes('Meta')) return label+': '+Math.round(val);
+          return label+': '+Math.round(val)+(fat>0?' · '+fatStr:'');
+        }}}
+      },
       scales:{
         x:{ticks:{color:'#6b6560',font:{size:8}},grid:{color:'#f0ece6'}},
         y:{ticks:{color:'#6b6560',font:{size:8}},grid:{color:'#f0ece6'},beginAtZero:true}
@@ -705,9 +722,12 @@ function updateSegKPIs(segId){
   const seg = segments.find(s=>s.id===segId);
   if(!seg) return;
   const total = [...seg.procs].reduce((s,p)=>s+(PROC_MAP[p]?.qtd_total||0),0);
+  const fat   = [...seg.procs].reduce((s,p)=>s+(PROC_MAP[p]?.fat_total||0),0);
   const tv = document.getElementById(`sk-total-${segId}`);
+  const tf = document.getElementById(`sk-fat-${segId}`);
   const tt = document.getElementById(`sk-types-${segId}`);
   if(tv) tv.textContent = fmtN(total);
+  if(tf) tf.textContent = fmtR(fat);
   if(tt) tt.textContent = seg.procs.size;
 }
 
